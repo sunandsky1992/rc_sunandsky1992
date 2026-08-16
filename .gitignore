@@ -1,0 +1,16 @@
+# Binaries
+*.exe
+*.exe~
+
+# Test binaries
+*.test
+
+# PDF (assignment file)
+ai_coding_assignment.pdf
+
+# WorkBuddy internal
+.workbuddy/
+
+# OS files
+.DS_Store
+Thumbs.db

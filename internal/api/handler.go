@@ -1,0 +1,194 @@
+package api
+
+import (
+	"context"
+	"log"
+	"net/http"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+
+	"rc_notification/internal/model"
+	"rc_notification/internal/store"
+)
+
+// Handler HTTP 接口处理器
+type Handler struct {
+	store store.Store
+}
+
+// NewHandler 创建 Handler
+func NewHandler(s store.Store) *Handler {
+	return &Handler{store: s}
+}
+
+// CreateNotification POST /api/notifications
+func (h *Handler) CreateNotification(c *gin.Context) {
+	var req model.CreateNotificationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	// 校验 vendor_id 是否存在
+	ctx := context.Background()
+	vendor, err := h.store.GetVendorConfig(ctx, req.VendorID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "vendor_id not found"})
+		return
+	}
+	_ = vendor
+
+	// 幂等去重
+	if req.IdempotencyKey != "" {
+		existing, _ := h.store.GetNotificationByIdempotencyKey(ctx, req.IdempotencyKey)
+		if existing != nil {
+			log.Printf("idempotency hit: key=%s notification_id=%s", req.IdempotencyKey, existing.NotificationID)
+			c.JSON(http.StatusAccepted, model.CreateNotificationResponse{
+				NotificationID: existing.NotificationID,
+				Status:         existing.Status,
+			})
+			return
+		}
+	}
+
+	// 生成 notification_id
+	notificationID := uuid.New().String()
+
+	now := time.Now()
+	n := &model.Notification{
+		NotificationID:  notificationID,
+		VendorID:        req.VendorID,
+		IdempotencyKey:  req.IdempotencyKey,
+		Headers:         req.Headers,
+		Payload:         req.Payload,
+		Status:          model.StatusPending,
+		RetryCount:      0,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+
+	if err := h.store.CreateNotification(ctx, n); err != nil {
+		log.Printf("create notification error: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+
+	c.JSON(http.StatusAccepted, model.CreateNotificationResponse{
+		NotificationID: notificationID,
+		Status:         model.StatusPending,
+	})
+	log.Printf("notification created: id=%s vendor=%s idempotency_key=%s", notificationID, req.VendorID, req.IdempotencyKey)
+}
+
+// GetNotification GET /api/notifications/:id
+func (h *Handler) GetNotification(c *gin.Context) {
+	id := c.Param("id")
+	ctx := context.Background()
+
+	n, err := h.store.GetNotification(ctx, id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, n)
+}
+
+// GetDeadLetters GET /api/dead-letters
+func (h *Handler) GetDeadLetters(c *gin.Context) {
+	ctx := context.Background()
+
+	letters, err := h.store.GetDeadLetters(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, letters)
+}
+
+// RetryDeadLetter POST /api/dead-letters/:id/retry
+func (h *Handler) RetryDeadLetter(c *gin.Context) {
+	id := c.Param("id")
+	ctx := context.Background()
+
+	if err := h.store.RetryDeadLetter(ctx, id); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+
+	log.Printf("dead letter retried: id=%s", id)
+
+	n, _ := h.store.GetNotification(ctx, id)
+	c.JSON(http.StatusOK, gin.H{
+		"notification_id": n.NotificationID,
+		"status":          n.Status,
+		"retry_count":     n.RetryCount,
+	})
+}
+
+// GetStats GET /api/stats?start=...&end=...
+func (h *Handler) GetStats(c *gin.Context) {
+	ctx := context.Background()
+	start, end := parseTimeRange(c)
+
+	stats, err := h.store.GetStatsOverview(ctx, start, end)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, stats)
+}
+
+// GetStatsByVendor GET /api/stats/by-vendor?start=...&end=...
+func (h *Handler) GetStatsByVendor(c *gin.Context) {
+	ctx := context.Background()
+	start, end := parseTimeRange(c)
+
+	stats, err := h.store.GetStatsByVendor(ctx, start, end)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, stats)
+}
+
+// GetRetryDistribution GET /api/stats/retry-distribution?start=...&end=...
+func (h *Handler) GetRetryDistribution(c *gin.Context) {
+	ctx := context.Background()
+	start, end := parseTimeRange(c)
+
+	dist, err := h.store.GetRetryDistribution(ctx, start, end)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, dist)
+}
+
+// parseTimeRange 解析时间范围参数
+func parseTimeRange(c *gin.Context) (time.Time, time.Time) {
+	startStr := c.Query("start")
+	endStr := c.Query("end")
+
+	start := time.Now().Add(-24 * time.Hour)
+	end := time.Now()
+
+	if startStr != "" {
+		if t, err := time.Parse(time.RFC3339, startStr); err == nil {
+			start = t
+		}
+	}
+	if endStr != "" {
+		if t, err := time.Parse(time.RFC3339, endStr); err == nil {
+			end = t
+		}
+	}
+
+	return start, end
+}
