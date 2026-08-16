@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"rc_notification/internal/model"
+	"rc_sunandsky1992/internal/model"
 )
 
 // PGStore PostgreSQL 实现
@@ -212,10 +212,16 @@ func (s *PGStore) GetDeadLetters(ctx context.Context) ([]*model.Notification, er
 }
 
 func (s *PGStore) RetryDeadLetter(ctx context.Context, notificationID string) error {
-	_, err := s.pool.Exec(ctx,
+	tag, err := s.pool.Exec(ctx,
 		`UPDATE notifications SET status = 'pending', retry_count = 0, next_retry_at = NULL, updated_at = NOW() WHERE notification_id = $1 AND status = 'dead'`,
 		notificationID)
-	return err
+	if err != nil {
+		return fmt.Errorf("retry dead letter: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("not found or not in dead status")
+	}
+	return nil
 }
 
 func (s *PGStore) GetStatsOverview(ctx context.Context, start, end time.Time) (*model.StatsOverview, error) {

@@ -11,9 +11,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"rc_notification/internal/api"
-	"rc_notification/internal/dispatcher"
-	"rc_notification/internal/store"
+	"rc_sunandsky1992/internal/api"
+	"rc_sunandsky1992/internal/dispatcher"
+	"rc_sunandsky1992/internal/store"
 )
 
 func main() {

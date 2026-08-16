@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"rc_notification/internal/model"
+	"rc_sunandsky1992/internal/model"
 )
 
 // Store 定义数据访问层接口，方便上层 mock 测试

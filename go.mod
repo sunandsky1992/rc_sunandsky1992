@@ -1,4 +1,4 @@
-module rc_notification
+module rc_sunandsky1992
 
 go 1.26.5
 

@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"time"
 
-	"rc_notification/internal/model"
-	"rc_notification/internal/store"
+	"rc_sunandsky1992/internal/model"
+	"rc_sunandsky1992/internal/store"
 )
 
 // HTTPClient 接口，方便 mock 测试
@@ -77,7 +77,15 @@ func (d *Dispatcher) ProcessOne(ctx context.Context) error {
 		return fmt.Errorf("build request: %w", err)
 	}
 
-	// 4. 执行投递
+	// 4. 执行投递（超时按供应商配置，默认 30s）
+	timeout := 30 * time.Second
+	if vendor.TimeoutMS > 0 {
+		timeout = time.Duration(vendor.TimeoutMS) * time.Millisecond
+	}
+	deliverCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	req = req.WithContext(deliverCtx)
+
 	startTime := time.Now()
 	resp, err := d.client.Do(req)
 	if err != nil {

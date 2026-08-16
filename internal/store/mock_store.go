@@ -3,13 +3,15 @@ package store
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
-	"rc_notification/internal/model"
+	"rc_sunandsky1992/internal/model"
 )
 
 // MockStore 内存实现的 Store，用于单元测试
 type MockStore struct {
+	mu             sync.Mutex
 	Notifications  map[string]*model.Notification
 	VendorConfigs  map[string]*model.VendorConfig
 	ClaimTaskCalls int
@@ -42,15 +44,27 @@ func NewMockStore() *MockStore {
 }
 
 func (m *MockStore) CreateNotification(ctx context.Context, n *model.Notification) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if existing, ok := m.Notifications[n.NotificationID]; ok {
 		_ = existing
 		return fmt.Errorf("notification already exists")
+	}
+	// 模拟 idempotency_key 唯一约束（与 PG 的 UNIQUE 索引一致）
+	if n.IdempotencyKey != "" {
+		for _, item := range m.Notifications {
+			if item.IdempotencyKey == n.IdempotencyKey {
+				return fmt.Errorf("notification already exists")
+			}
+		}
 	}
 	m.Notifications[n.NotificationID] = n
 	return nil
 }
 
 func (m *MockStore) GetNotification(ctx context.Context, notificationID string) (*model.Notification, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	n, ok := m.Notifications[notificationID]
 	if !ok {
 		return nil, fmt.Errorf("not found")
@@ -62,6 +76,8 @@ func (m *MockStore) GetNotificationByIdempotencyKey(ctx context.Context, key str
 	if key == "" {
 		return nil, nil
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	for _, n := range m.Notifications {
 		if n.IdempotencyKey == key {
 			return n, nil
@@ -71,6 +87,8 @@ func (m *MockStore) GetNotificationByIdempotencyKey(ctx context.Context, key str
 }
 
 func (m *MockStore) ClaimTask(ctx context.Context) (*model.Notification, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.ClaimTaskCalls++
 	now := time.Now()
 	for _, n := range m.Notifications {
@@ -93,6 +111,8 @@ func (m *MockStore) ClaimTask(ctx context.Context) (*model.Notification, error) 
 }
 
 func (m *MockStore) UpdateStatus(ctx context.Context, notificationID string, status model.NotificationStatus, retryCount int, nextRetryAt *time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	n, ok := m.Notifications[notificationID]
 	if !ok {
 		return fmt.Errorf("not found")
@@ -105,6 +125,8 @@ func (m *MockStore) UpdateStatus(ctx context.Context, notificationID string, sta
 }
 
 func (m *MockStore) UpdateResponse(ctx context.Context, notificationID string, statusCode int, body string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	n, ok := m.Notifications[notificationID]
 	if !ok {
 		return fmt.Errorf("not found")
@@ -115,6 +137,8 @@ func (m *MockStore) UpdateResponse(ctx context.Context, notificationID string, s
 }
 
 func (m *MockStore) GetVendorConfig(ctx context.Context, vendorID string) (*model.VendorConfig, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	c, ok := m.VendorConfigs[vendorID]
 	if !ok {
 		return nil, fmt.Errorf("vendor not found")
@@ -123,6 +147,8 @@ func (m *MockStore) GetVendorConfig(ctx context.Context, vendorID string) (*mode
 }
 
 func (m *MockStore) GetDeadLetters(ctx context.Context) ([]*model.Notification, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	var result []*model.Notification
 	for _, n := range m.Notifications {
 		if n.Status == model.StatusDead {
@@ -133,9 +159,14 @@ func (m *MockStore) GetDeadLetters(ctx context.Context) ([]*model.Notification, 
 }
 
 func (m *MockStore) RetryDeadLetter(ctx context.Context, notificationID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	n, ok := m.Notifications[notificationID]
 	if !ok {
-		return fmt.Errorf("not found")
+		return fmt.Errorf("not found or not in dead status")
+	}
+	if n.Status != model.StatusDead {
+		return fmt.Errorf("not found or not in dead status")
 	}
 	n.Status = model.StatusPending
 	n.RetryCount = 0
@@ -145,6 +176,8 @@ func (m *MockStore) RetryDeadLetter(ctx context.Context, notificationID string) 
 }
 
 func (m *MockStore) GetStatsOverview(ctx context.Context, start, end time.Time) (*model.StatsOverview, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	s := &model.StatsOverview{}
 	for _, n := range m.Notifications {
 		if n.CreatedAt.Before(start) || n.CreatedAt.After(end) {
@@ -173,6 +206,8 @@ func (m *MockStore) GetStatsOverview(ctx context.Context, start, end time.Time) 
 }
 
 func (m *MockStore) GetStatsByVendor(ctx context.Context, start, end time.Time) ([]*model.StatsByVendor, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	vendorMap := make(map[string]*model.StatsByVendor)
 	for _, n := range m.Notifications {
 		if n.CreatedAt.Before(start) || n.CreatedAt.After(end) {
@@ -202,6 +237,8 @@ func (m *MockStore) GetStatsByVendor(ctx context.Context, start, end time.Time) 
 }
 
 func (m *MockStore) GetRetryDistribution(ctx context.Context, start, end time.Time) ([]*model.RetryDistribution, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	distMap := make(map[int]*model.RetryDistribution)
 	for _, n := range m.Notifications {
 		if n.CreatedAt.Before(start) || n.CreatedAt.After(end) {

@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"rc_notification/internal/model"
-	"rc_notification/internal/store"
+	"rc_sunandsky1992/internal/model"
+	"rc_sunandsky1992/internal/store"
 )
 
 // --- Mock HTTP Client ---
@@ -324,5 +324,40 @@ func TestResponseBodyTruncated(t *testing.T) {
 	result := ms.Notifications["test-007"]
 	if len(result.ResponseBody) > 4096 {
 		t.Errorf("expected response body <= 4096 bytes, got %d", len(result.ResponseBody))
+	}
+}
+
+// --- Test: vendor timeout_ms applied to request context ---
+
+func TestVendorTimeoutApplied(t *testing.T) {
+	ms := store.NewMockStore()
+	mc := &MockHTTPClient{StatusCode: 200, Body: ""}
+
+	n := &model.Notification{
+		NotificationID: "test-008",
+		VendorID:       "ad_system", // ad_system TimeoutMS = 10000
+		Headers:        map[string]string{},
+		Payload:        map[string]interface{}{"event": "register"},
+		Status:         model.StatusPending,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+	}
+	ms.Notifications["test-008"] = n
+
+	d := New(ms, mc)
+	_ = d.ProcessOne(context.Background())
+
+	req := mc.LastReq
+	if req == nil {
+		t.Fatal("expected HTTP request to be made")
+	}
+	deadline, ok := req.Context().Deadline()
+	if !ok {
+		t.Fatal("expected request context to have a deadline from vendor timeout")
+	}
+	expected := time.Now().Add(10000 * time.Millisecond)
+	diff := deadline.Sub(expected)
+	if diff > 200*time.Millisecond || diff < -200*time.Millisecond {
+		t.Errorf("expected deadline ~10s from now, got %v", deadline)
 	}
 }

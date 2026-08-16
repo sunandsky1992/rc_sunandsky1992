@@ -6,11 +6,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
-	"rc_notification/internal/model"
-	"rc_notification/internal/store"
+	"rc_sunandsky1992/internal/model"
+	"rc_sunandsky1992/internal/store"
 
 	"github.com/gin-gonic/gin"
 )
@@ -325,6 +326,97 @@ func TestGetRetryDistribution(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &resp)
 	if len(resp) != 3 {
 		t.Errorf("expected 3 retry buckets, got %d", len(resp))
+	}
+}
+
+// --- Test: POST /api/dead-letters/:id/retry not found (不 panic) ---
+
+func TestRetryDeadLetter_NotFound(t *testing.T) {
+	s := store.NewMockStore()
+	r := setupRouter(s)
+
+	req := httptest.NewRequest("POST", "/api/dead-letters/nonexistent/retry", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+// --- Test: POST /api/dead-letters/:id/retry 非 dead 状态 (不 panic) ---
+
+func TestRetryDeadLetter_NotDeadStatus(t *testing.T) {
+	s := store.NewMockStore()
+	r := setupRouter(s)
+
+	s.Notifications["alive-001"] = &model.Notification{
+		NotificationID: "alive-001",
+		VendorID:       "ad_system",
+		Status:         model.StatusDelivered,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+	}
+
+	req := httptest.NewRequest("POST", "/api/dead-letters/alive-001/retry", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+// --- Test: 并发幂等（相同 idempotency_key 同时提交） ---
+
+func TestCreateNotification_IdempotencyConcurrent(t *testing.T) {
+	s := store.NewMockStore()
+	r := setupRouter(s)
+
+	body := `{"vendor_id":"ad_system","idempotency_key":"concurrent-key","payload":{"event":"register"}}`
+
+	const n = 20
+	var wg sync.WaitGroup
+	codes := make([]int, n)
+	ids := make([]string, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			req := httptest.NewRequest("POST", "/api/notifications", bytes.NewBufferString(body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+			codes[idx] = w.Code
+			var resp model.CreateNotificationResponse
+			json.Unmarshal(w.Body.Bytes(), &resp)
+			ids[idx] = resp.NotificationID
+		}(i)
+	}
+	wg.Wait()
+
+	for i, code := range codes {
+		if code != http.StatusAccepted {
+			t.Errorf("request %d expected 202, got %d", i, code)
+		}
+	}
+
+	// 所有响应必须是同一个 notification_id
+	for i := 1; i < n; i++ {
+		if ids[i] == "" || ids[i] != ids[0] {
+			t.Errorf("request %d expected same notification_id %s, got %s", i, ids[0], ids[i])
+		}
+	}
+
+	// 只创建了一条记录
+	count := 0
+	for _, item := range s.Notifications {
+		if item.IdempotencyKey == "concurrent-key" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("expected exactly 1 notification created, got %d", count)
 	}
 }
 

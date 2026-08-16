@@ -1,4 +1,4 @@
-# rc_notification - API 通知系统
+# rc_sunandsky1992 - API 通知系统
 
 可靠投递外部 HTTP 通知的内部服务。接收业务系统的通知请求，异步投递到不同供应商的 API，支持失败重试和死信管理。
 
@@ -29,7 +29,7 @@
 - 任务落库后才返回 202，进程崩溃不丢
 - 失败自动重试，可能重复投递
 - 重复投递风险由外部供应商处理（我们提供 `notification_id` 供去重）
-- 不用 exactly-once：分布式 exactly-onone 代价极高，通知场景偶尔重复的代价远小于漏投递
+- 不用 exactly-once：分布式 exactly-once 代价极高，通知场景偶尔重复的代价远小于漏投递
 
 **任务抢占：SELECT ... FOR UPDATE SKIP LOCKED**
 - 多 Worker 并发安全，被锁的任务自动跳过
