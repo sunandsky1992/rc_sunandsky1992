@@ -54,12 +54,13 @@ Dispatcher 轮询时使用 `SKIP LOCKED` 抢占任务，多 Worker 并发安全�
 SELECT * FROM notifications
 WHERE status = 'pending'
    OR (status = 'retrying' AND next_retry_at <= NOW())
+   OR (status = 'in_flight' AND updated_at < NOW() - INTERVAL '60 seconds')
 ORDER BY created_at
 LIMIT 1
 FOR UPDATE SKIP LOCKED;
 ```
 
-被锁住的任务自动跳过，不会重复领取。
+被锁住的任务自动跳过，不会重复领取。`in_flight` 且 `updated_at` 超过 60s 的任务会被重新抢占（Worker 崩溃恢复兜底）。
 
 ---
 

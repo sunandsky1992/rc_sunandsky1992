@@ -41,7 +41,7 @@ Dispatcher 是系统的投递引擎，负责从 Task Store 轮询任务、构建
   - `pending` 任务
   - `retrying` 且 `next_retry_at <= NOW()`
   - `in_flight` 但 `updated_at` 超过 60s（Worker 崩溃恢复）
-- 抢占成功后进入领取流程，没有任务则 sleep 1s 重新轮询
+- 每轮查询结束（无论是否有任务）sleep 1s，再开始下一轮
 
 **查询语句：**
 
@@ -103,7 +103,7 @@ COMMIT
 
 ```
 retry_count++
-if retry_count >= MAX_RETRIES(8):
+if retry_count > MAX_RETRIES(8):   // 第 9 次失败（已重试 8 次）后进 dead
     status = 'dead'
 else:
     status = 'retrying'

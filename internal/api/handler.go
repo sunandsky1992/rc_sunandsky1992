@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"log"
 	"net/http"
 	"time"
@@ -32,7 +31,7 @@ func (h *Handler) CreateNotification(c *gin.Context) {
 	}
 
 	// 校验 vendor_id 是否存在
-	ctx := context.Background()
+	ctx := c.Request.Context()
 	if _, err := h.store.GetVendorConfig(ctx, req.VendorID); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "vendor_id not found"})
 		return
@@ -54,17 +53,23 @@ func (h *Handler) CreateNotification(c *gin.Context) {
 	// 生成 notification_id
 	notificationID := uuid.New().String()
 
+	// headers 为空时兜底为空对象，与 DB 默认值 '{}' 保持一致
+	headers := req.Headers
+	if headers == nil {
+		headers = map[string]string{}
+	}
+
 	now := time.Now()
 	n := &model.Notification{
-		NotificationID:  notificationID,
-		VendorID:        req.VendorID,
-		IdempotencyKey:  req.IdempotencyKey,
-		Headers:         req.Headers,
-		Payload:         req.Payload,
-		Status:          model.StatusPending,
-		RetryCount:      0,
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		NotificationID: notificationID,
+		VendorID:       req.VendorID,
+		IdempotencyKey: req.IdempotencyKey,
+		Headers:        headers,
+		Payload:        req.Payload,
+		Status:         model.StatusPending,
+		RetryCount:     0,
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 
 	if err := h.store.CreateNotification(ctx, n); err != nil {
@@ -95,7 +100,7 @@ func (h *Handler) CreateNotification(c *gin.Context) {
 // GetNotification GET /api/notifications/:id
 func (h *Handler) GetNotification(c *gin.Context) {
 	id := c.Param("id")
-	ctx := context.Background()
+	ctx := c.Request.Context()
 
 	n, err := h.store.GetNotification(ctx, id)
 	if err != nil {
@@ -108,7 +113,7 @@ func (h *Handler) GetNotification(c *gin.Context) {
 
 // GetDeadLetters GET /api/dead-letters
 func (h *Handler) GetDeadLetters(c *gin.Context) {
-	ctx := context.Background()
+	ctx := c.Request.Context()
 
 	letters, err := h.store.GetDeadLetters(ctx)
 	if err != nil {
@@ -122,7 +127,7 @@ func (h *Handler) GetDeadLetters(c *gin.Context) {
 // RetryDeadLetter POST /api/dead-letters/:id/retry
 func (h *Handler) RetryDeadLetter(c *gin.Context) {
 	id := c.Param("id")
-	ctx := context.Background()
+	ctx := c.Request.Context()
 
 	if err := h.store.RetryDeadLetter(ctx, id); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
@@ -145,7 +150,7 @@ func (h *Handler) RetryDeadLetter(c *gin.Context) {
 
 // GetStats GET /api/stats?start=...&end=...
 func (h *Handler) GetStats(c *gin.Context) {
-	ctx := context.Background()
+	ctx := c.Request.Context()
 	start, end := parseTimeRange(c)
 
 	stats, err := h.store.GetStatsOverview(ctx, start, end)
@@ -154,12 +159,15 @@ func (h *Handler) GetStats(c *gin.Context) {
 		return
 	}
 
+	// 回显查询时间范围，方便调用方核对统计口径
+	stats.TimeRange = &model.TimeRange{Start: start, End: end}
+
 	c.JSON(http.StatusOK, stats)
 }
 
 // GetStatsByVendor GET /api/stats/by-vendor?start=...&end=...
 func (h *Handler) GetStatsByVendor(c *gin.Context) {
-	ctx := context.Background()
+	ctx := c.Request.Context()
 	start, end := parseTimeRange(c)
 
 	stats, err := h.store.GetStatsByVendor(ctx, start, end)
@@ -173,7 +181,7 @@ func (h *Handler) GetStatsByVendor(c *gin.Context) {
 
 // GetRetryDistribution GET /api/stats/retry-distribution?start=...&end=...
 func (h *Handler) GetRetryDistribution(c *gin.Context) {
-	ctx := context.Background()
+	ctx := c.Request.Context()
 	start, end := parseTimeRange(c)
 
 	dist, err := h.store.GetRetryDistribution(ctx, start, end)

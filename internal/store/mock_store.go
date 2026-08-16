@@ -197,7 +197,8 @@ func (m *MockStore) GetStatsOverview(ctx context.Context, start, end time.Time) 
 			s.Retrying++
 		}
 	}
-	s.Failed = int64(s.Total - s.Delivered - s.Pending - s.InFlight - s.Retrying + s.Dead - s.Dead)
+	// 状态集合只有这 5 种，剩余的都计入失败（即 dead）
+	s.Failed = int64(s.Total - s.Delivered - s.Pending - s.InFlight - s.Retrying)
 	if s.Total > 0 {
 		s.SuccessRate = float64(s.Delivered) / float64(s.Total)
 		s.FailureRate = float64(s.Dead) / float64(s.Total)

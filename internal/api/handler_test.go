@@ -2,7 +2,6 @@ package api
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -419,6 +418,3 @@ func TestCreateNotification_IdempotencyConcurrent(t *testing.T) {
 		t.Errorf("expected exactly 1 notification created, got %d", count)
 	}
 }
-
-// 确保实现了 context 接口
-var _ = context.Background

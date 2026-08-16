@@ -17,13 +17,16 @@ import (
 )
 
 func main() {
+	// 用 signal context 统一控制 HTTP server 与 Dispatcher 的优雅退出
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
 		databaseURL = "postgres://postgres:postgres@localhost:5432/notifications?sslmode=disable"
 	}
 
 	// 连接数据库
-	ctx := context.Background()
 	s, err := store.NewPGStore(ctx, databaseURL)
 	if err != nil {
 		log.Printf("failed to connect database, running in mock mode: %v", err)
@@ -77,10 +80,9 @@ func main() {
 		}
 	}()
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	<-ctx.Done()
 	log.Println("shutting down...")
+	stop() // 恢复默认信号行为，避免二次 Ctrl+C 强制退出前中断清理
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

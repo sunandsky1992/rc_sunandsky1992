@@ -46,15 +46,17 @@ GET /api/stats?start=2026-08-16T00:00:00Z&end=2026-08-16T23:59:59Z
   },
   "total": 1500,
   "delivered": 1420,
-  "failed": 80,
-  "dead": 15,
+  "failed": 70,
+  "dead": 70,
   "pending": 3,
   "in_flight": 2,
   "retrying": 5,
   "success_rate": 0.947,
-  "failure_rate": 0.053
+  "failure_rate": 0.047
 }
 ```
+
+> `failed` 为统计时间范围内最终失败的任务数（与 `dead` 相同，因为状态只可能是 pending / in_flight / retrying / delivered / dead 五种）。
 
 ### 2. 按供应商统计
 

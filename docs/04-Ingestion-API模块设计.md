@@ -64,7 +64,7 @@ POST /api/notifications
 |------|------|
 | `vendor_id` | 指定要通知哪个供应商，对应 `vendor_configs` 表中的配置 |
 | `idempotency_key` | 幂等键，业务系统生成，相同 key 视为重复提交，返回已有结果 |
-| `headers` | 业务方自定义 Header，投递时与供应商配置的 `header_template` 合并，业务方 Header 优先级更高 |
+| `headers` | 业务方自定义 Header，投递时原样透传给外部 API |
 | `payload` | 业务数据，原样存储，投递时按供应商配置渲染成目标请求格式 |
 
 **响应：**
